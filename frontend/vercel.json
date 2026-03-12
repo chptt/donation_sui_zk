@@ -8,12 +8,11 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "/$1"
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
     }
-  ],
-  "env": {
-    "NEXT_PUBLIC_CONTRACT_ADDRESS": "0x3914fa9a5117392fb8e4a39a572c135d6112bda4281a49901426a173d2629b70",
-    "NEXT_PUBLIC_APTOS_NETWORK": "testnet"
-  }
+  ]
 }
