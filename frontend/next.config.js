@@ -2,25 +2,37 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  // Disable strict ES modules for Vercel compatibility
+  
+  // Vercel-specific optimizations
   experimental: {
     esmExternals: false,
   },
-  // Configure images
+  
+  // Image configuration
   images: {
     domains: [],
-    unoptimized: true, // Disable image optimization for now
+    unoptimized: true,
   },
-  // Enable trailing slashes for better routing
-  trailingSlash: true,
-  // Disable TypeScript checking during build (temporary fix)
+  
+  // Important: Enable static export
+  output: 'export',
+  
+  // Disable trailing slashes for cleaner URLs
+  trailingSlash: false,
+  
+  // Disable TypeScript/ESLint during build to prevent failures
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Disable ESLint during build
   eslint: {
     ignoreDuringBuilds: true,
   },
+  
+  // Base path if needed (empty for root)
+  basePath: '',
+  
+  // Asset prefix for CDN (empty for Vercel)
+  assetPrefix: '',
 };
 
 module.exports = nextConfig;
