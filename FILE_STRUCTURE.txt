@@ -1,0 +1,78 @@
+APTOS DONATION PLATFORM - FILE STRUCTURE
+========================================
+
+aptos-donation-platform/
+│
+├── contracts/                          # Smart Contract
+│   ├── .gitignore
+│   ├── Move.toml                       # Move package config
+│   └── sources/
+│       └── donation_platform.move      # Main smart contract
+│
+├── frontend/                           # Next.js Application
+│   ├── .env.local.example              # Environment template
+│   ├── .gitignore
+│   ├── package.json                    # Dependencies
+│   ├── tsconfig.json                   # TypeScript config
+│   ├── next.config.js                  # Next.js config
+│   ├── postcss.config.js               # PostCSS config
+│   ├── tailwind.config.ts              # Tailwind config
+│   │
+│   ├── components/                     # React Components
+│   │   ├── Navbar.tsx                  # Navigation + Wallet
+│   │   └── CampaignCard.tsx            # Campaign preview card
+│   │
+│   ├── lib/                            # Utilities
+│   │   ├── aptosClient.ts              # Blockchain interaction
+│   │   └── wallet.ts                   # Petra wallet functions
+│   │
+│   ├── pages/                          # Next.js Pages
+│   │   ├── _app.tsx                    # App wrapper
+│   │   ├── _document.tsx               # HTML document
+│   │   ├── index.tsx                   # Home page
+│   │   ├── create.tsx                  # Create campaign
+│   │   ├── leaderboard.tsx             # Top donors
+│   │   └── campaign/
+│   │       └── [id].tsx                # Campaign details
+│   │
+│   └── styles/
+│       └── globals.css                 # Global styles
+│
+├── .gitignore                          # Git ignore rules
+├── README.md                           # Main documentation
+├── QUICKSTART.md                       # 5-minute setup guide
+├── DEPLOYMENT_GUIDE.md                 # Detailed deployment
+├── PROJECT_OVERVIEW.md                 # Architecture & design
+├── SETUP_COMMANDS.txt                  # Command reference
+└── FILE_STRUCTURE.txt                  # This file
+
+
+KEY FILES EXPLAINED
+===================
+
+Smart Contract:
+- donation_platform.move: Core logic for campaigns and donations
+
+Frontend Core:
+- pages/index.tsx: Browse campaigns with filters
+- pages/create.tsx: Create new campaign form
+- pages/campaign/[id].tsx: Campaign details + donate
+- pages/leaderboard.tsx: Top donors ranking
+
+Components:
+- Navbar.tsx: Wallet connection + navigation
+- CampaignCard.tsx: Campaign preview with progress
+
+Libraries:
+- aptosClient.ts: Interact with blockchain
+- wallet.ts: Petra wallet integration
+
+Configuration:
+- Move.toml: Smart contract dependencies
+- package.json: Frontend dependencies
+- tailwind.config.ts: UI styling theme
+- .env.local: Contract address (create this!)
+
+
+TOTAL FILES: 27
+LINES OF CODE: ~2,000+

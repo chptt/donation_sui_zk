@@ -1,0 +1,3 @@
+﻿lib/walletProvider.tsx(3,29): error TS2307: Cannot find module '@aptos-labs/wallet-adapter-wallets' or its corresponding type declarations.
+lib/walletProvider.tsx(16,7): error TS2322: Type '{ children: ReactNode; plugins: any[]; autoConnect: true; onError: (error: any) => void; }' is not assignable to type 'IntrinsicAttributes & AptosWalletProviderProps'.
+  Property 'plugins' does not exist on type 'IntrinsicAttributes & AptosWalletProviderProps'.

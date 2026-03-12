@@ -1,0 +1,14 @@
+Your Aptos Account Address:
+0x3914fa9a5117392fb8e4a39a572c135d6112bda4281a49901426a173d2629b70
+
+Testnet Faucet Link:
+https://aptos.dev/network/faucet?address=0x3914fa9a5117392fb8e4a39a572c135d6112bda4281a49901426a173d2629b70
+
+After funding, use this address in your frontend .env.local:
+NEXT_PUBLIC_CONTRACT_ADDRESS=0x3914fa9a5117392fb8e4a39a572c135d6112bda4281a49901426a173d2629b70
+NEXT_PUBLIC_APTOS_NETWORK=testnet
+
+Next Steps:
+1. Visit the faucet link above and get testnet APT
+2. Run: aptos move publish --named-addresses donation_platform=default
+3. Run: aptos move run --function-id '0x3914fa9a5117392fb8e4a39a572c135d6112bda4281a49901426a173d2629b70::donation_platform::initialize'

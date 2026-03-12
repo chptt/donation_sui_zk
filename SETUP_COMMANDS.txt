@@ -1,0 +1,46 @@
+=== APTOS DONATION PLATFORM - SETUP COMMANDS ===
+
+STEP 1: INSTALL APTOS CLI
+--------------------------
+# Windows PowerShell (Run as Administrator)
+iwr "https://aptos.dev/scripts/install_cli.py" -useb | iex
+
+# Verify
+aptos --version
+
+
+STEP 2: DEPLOY SMART CONTRACT
+------------------------------
+cd contracts
+aptos init --network testnet
+# Get testnet tokens: https://aptoslabs.com/testnet-faucet
+aptos move compile
+aptos move publish --named-addresses donation_platform=default
+# Save your contract address!
+aptos move run --function-id 'YOUR_ADDRESS::donation_platform::initialize'
+
+
+STEP 3: SETUP FRONTEND
+----------------------
+cd frontend
+npm install
+
+# Create .env.local with:
+NEXT_PUBLIC_CONTRACT_ADDRESS=0xYOUR_CONTRACT_ADDRESS
+NEXT_PUBLIC_APTOS_NETWORK=testnet
+
+
+STEP 4: RUN APPLICATION
+-----------------------
+npm run dev
+# Visit: http://localhost:3000
+
+
+STEP 5: INSTALL PETRA WALLET
+-----------------------------
+# Install from: https://petra.app/
+# Switch to Testnet network
+# Get testnet tokens from faucet
+
+
+DONE! Your platform is ready to use.
