@@ -1,6 +1,9 @@
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
-const config = new AptosConfig({ network: Network.TESTNET });
+const network = process.env.NEXT_PUBLIC_APTOS_NETWORK === "mainnet"
+  ? Network.MAINNET
+  : Network.TESTNET;
+const config = new AptosConfig({ network });
 export const aptos = new Aptos(config);
 
 export const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";

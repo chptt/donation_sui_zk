@@ -1,4 +1,4 @@
-module donation_platform::donation_platform {
+ module donation_platform::donation_platform {
     use std::signer;
     use std::string::String;
     use std::vector;
