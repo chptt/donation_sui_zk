@@ -10,6 +10,8 @@ export default function CampaignDetails() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [donationAmount, setDonationAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -18,14 +20,21 @@ export default function CampaignDetails() {
   }, [id]);
 
   const loadCampaign = async () => {
+    setPageLoading(true);
+    setError(null);
     try {
       const campaigns = await getCampaigns();
       const found = campaigns.find((c) => c.id === parseInt(id as string));
       if (found) {
         setCampaign(found);
+      } else {
+        setError("Campaign not found");
       }
-    } catch (error) {
-      console.error("Error loading campaign:", error);
+    } catch (err) {
+      console.error("Error loading campaign:", err);
+      setError("Failed to load campaign. Please try again.");
+    } finally {
+      setPageLoading(false);
     }
   };
 
@@ -63,11 +72,26 @@ export default function CampaignDetails() {
     setLoading(false);
   };
 
-  if (!campaign) {
+  if (pageLoading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
         <p className="mt-4 text-gray-600">Loading campaign...</p>
+      </div>
+    );
+  }
+
+  if (error || !campaign) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-20 text-center">
+        <div className="text-5xl mb-4">😕</div>
+        <p className="text-xl font-semibold text-gray-900 mb-2">{error || "Campaign not found"}</p>
+        <button
+          onClick={() => router.push("/")}
+          className="mt-4 px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700"
+        >
+          Back to Campaigns
+        </button>
       </div>
     );
   }
