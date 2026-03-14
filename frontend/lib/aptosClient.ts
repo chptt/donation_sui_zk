@@ -10,7 +10,7 @@ export const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
 export const MODULE_NAME = "donation_platform";
 
 export interface Campaign {
-  id: number;
+  id: number | string;
   creator: string;
   title: string;
   description: string;

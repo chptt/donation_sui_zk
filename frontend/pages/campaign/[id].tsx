@@ -24,7 +24,7 @@ export default function CampaignDetails() {
     setError(null);
     try {
       const campaigns = await getCampaigns();
-      const found = campaigns.find((c) => c.id === parseInt(id as string));
+      const found = campaigns.find((c) => c.id.toString() === id.toString());
       if (found) {
         setCampaign(found);
       } else {
