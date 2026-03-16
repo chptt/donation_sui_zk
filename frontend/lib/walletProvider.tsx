@@ -1,29 +1,32 @@
 import { ReactNode } from "react";
-import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
-import { Network } from "@aptos-labs/ts-sdk";
+import { SuiClientProvider, WalletProvider as DappKitWalletProvider } from "@mysten/dapp-kit";
+import { getFullnodeUrl } from "@mysten/sui/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const queryClient = new QueryClient();
+
+const network = (process.env.NEXT_PUBLIC_SUI_NETWORK as "mainnet" | "testnet" | "devnet") || "testnet";
+
+const networks = {
+  mainnet: { url: getFullnodeUrl("mainnet") },
+  testnet: { url: getFullnodeUrl("testnet") },
+  devnet: { url: getFullnodeUrl("devnet") },
+};
 
 interface WalletProviderProps {
   children: ReactNode;
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  const network = process.env.NEXT_PUBLIC_APTOS_NETWORK === "mainnet"
-    ? Network.MAINNET
-    : Network.TESTNET;
-
   return (
-    <AptosWalletAdapterProvider
-      autoConnect={true}
-      onError={(error) => {
-        console.error("Wallet adapter error:", error);
-      }}
-      dappConfig={{
-        network,
-      }}
-    >
-      {children}
-    </AptosWalletAdapterProvider>
+    <QueryClientProvider client={queryClient}>
+      <SuiClientProvider networks={networks} defaultNetwork={network}>
+        <DappKitWalletProvider autoConnect>
+          {children}
+        </DappKitWalletProvider>
+      </SuiClientProvider>
+    </QueryClientProvider>
   );
 }
 
-export { useWallet } from "@aptos-labs/wallet-adapter-react";
+export { useCurrentAccount, useConnectWallet, useDisconnectWallet, useWallets } from "@mysten/dapp-kit";

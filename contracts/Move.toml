@@ -1,16 +1,10 @@
 [package]
 name = "donation_platform"
 version = "1.0.0"
-authors = []
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
 
 [addresses]
-donation_platform = "0x3914fa9a5117392fb8e4a39a572c135d6112bda4281a49901426a173d2629b70"
-
-[dev-addresses]
-
-[dependencies.AptosFramework]
-git = "https://github.com/aptos-labs/aptos-core.git"
-rev = "mainnet"
-subdir = "aptos-move/framework/aptos-framework"
-
-[dev-dependencies]
+donation_platform = "0x0"

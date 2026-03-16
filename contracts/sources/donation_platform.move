@@ -1,22 +1,18 @@
- module donation_platform::donation_platform {
-    use std::signer;
+module donation_platform::donation_platform {
     use std::string::String;
-    use std::vector;
-    use aptos_framework::coin;
-    use aptos_framework::aptos_coin::AptosCoin;
-    use aptos_framework::account;
+    use sui::coin::{Self, Coin};
+    use sui::sui::SUI;
+    use sui::balance::{Self, Balance};
+    use sui::event;
 
     // Error codes
-    const E_NOT_INITIALIZED: u64 = 1;
-    const E_ALREADY_INITIALIZED: u64 = 2;
-    const E_NOT_CREATOR: u64 = 3;
-    const E_INVALID_AMOUNT: u64 = 4;
-    const E_CAMPAIGN_NOT_ACTIVE: u64 = 5;
-    const E_CAMPAIGN_NOT_FOUND: u64 = 6;
+    const E_NOT_CREATOR: u64 = 1;
+    const E_INVALID_AMOUNT: u64 = 2;
+    const E_CAMPAIGN_NOT_ACTIVE: u64 = 3;
 
-    // Campaign resource
-    struct Campaign has store, drop, copy {
-        id: u64,
+    // Campaign object (lives on-chain as a shared object)
+    public struct Campaign has key, store {
+        id: UID,
         creator: address,
         title: String,
         description: String,
@@ -24,157 +20,115 @@
         goal_amount: u64,
         total_donated: u64,
         active: bool,
+        balance: Balance<SUI>,
     }
 
-    // Donation record
-    struct Donation has store, drop, copy {
+    // Events
+    public struct CampaignCreated has copy, drop {
+        campaign_id: address,
+        creator: address,
+        title: String,
+        goal_amount: u64,
+    }
+
+    public struct DonationMade has copy, drop {
+        campaign_id: address,
         donor: address,
         amount: u64,
-        campaign_id: u64,
     }
 
-    // Global storage for campaigns
-    struct CampaignStore has key {
-        campaign_count: u64,
-        campaigns: vector<Campaign>,
-        donations: vector<Donation>,
+    public struct FundsWithdrawn has copy, drop {
+        campaign_id: address,
+        creator: address,
+        amount: u64,
     }
 
-    // Initialize the platform (call once)
-    public entry fun initialize(account: &signer) {
-        let account_addr = signer::address_of(account);
-        assert!(!exists<CampaignStore>(account_addr), E_ALREADY_INITIALIZED);
-        
-        move_to(account, CampaignStore {
-            campaign_count: 0,
-            campaigns: vector::empty<Campaign>(),
-            donations: vector::empty<Donation>(),
-        });
-    }
-
-    // Create a new campaign
+    // Create a new campaign (shared object so anyone can donate to it)
     public entry fun create_campaign(
-        account: &signer,
         title: String,
         description: String,
         charity_type: String,
         goal_amount: u64,
-        platform_address: address,
-    ) acquires CampaignStore {
-        assert!(exists<CampaignStore>(platform_address), E_NOT_INITIALIZED);
-        
-        let store = borrow_global_mut<CampaignStore>(platform_address);
-        let campaign_id = store.campaign_count + 1;
-        
+        ctx: &mut TxContext,
+    ) {
+        let campaign_uid = object::new(ctx);
+        let campaign_id = object::uid_to_address(&campaign_uid);
+
         let campaign = Campaign {
-            id: campaign_id,
-            creator: signer::address_of(account),
+            id: campaign_uid,
+            creator: tx_context::sender(ctx),
             title,
             description,
             charity_type,
             goal_amount,
             total_donated: 0,
             active: true,
+            balance: balance::zero<SUI>(),
         };
-        
-        vector::push_back(&mut store.campaigns, campaign);
-        store.campaign_count = campaign_id;
+
+        event::emit(CampaignCreated {
+            campaign_id,
+            creator: tx_context::sender(ctx),
+            title: campaign.title,
+            goal_amount,
+        });
+
+        transfer::share_object(campaign);
     }
 
-    // Donate to a campaign
+    // Donate SUI coins to a campaign
     public entry fun donate_to_campaign(
-        donor: &signer,
-        campaign_id: u64,
-        amount: u64,
-        platform_address: address,
-    ) acquires CampaignStore {
-        assert!(exists<CampaignStore>(platform_address), E_NOT_INITIALIZED);
+        campaign: &mut Campaign,
+        payment: Coin<SUI>,
+        ctx: &mut TxContext,
+    ) {
+        assert!(campaign.active, E_CAMPAIGN_NOT_ACTIVE);
+        let amount = coin::value(&payment);
         assert!(amount > 0, E_INVALID_AMOUNT);
-        
-        let store = borrow_global_mut<CampaignStore>(platform_address);
-        let campaigns = &mut store.campaigns;
-        let len = vector::length(campaigns);
-        let i = 0;
-        let found = false;
-        
-        while (i < len) {
-            let campaign = vector::borrow_mut(campaigns, i);
-            if (campaign.id == campaign_id) {
-                assert!(campaign.active, E_CAMPAIGN_NOT_ACTIVE);
-                
-                // Transfer coins from donor to campaign creator
-                coin::transfer<AptosCoin>(donor, campaign.creator, amount);
-                
-                // Update campaign
-                campaign.total_donated = campaign.total_donated + amount;
-                
-                // Record donation
-                let donation = Donation {
-                    donor: signer::address_of(donor),
-                    amount,
-                    campaign_id,
-                };
-                vector::push_back(&mut store.donations, donation);
-                
-                found = true;
-                break
-            };
-            i = i + 1;
-        };
-        
-        assert!(found, E_CAMPAIGN_NOT_FOUND);
+
+        let campaign_id = object::uid_to_address(&campaign.id);
+
+        campaign.total_donated = campaign.total_donated + amount;
+        balance::join(&mut campaign.balance, coin::into_balance(payment));
+
+        event::emit(DonationMade {
+            campaign_id,
+            donor: tx_context::sender(ctx),
+            amount,
+        });
     }
 
-    // Withdraw funds (only creator)
+    // Withdraw all funds — only the campaign creator can call this
     public entry fun withdraw_funds(
-        creator: &signer,
-        campaign_id: u64,
-        platform_address: address,
-    ) acquires CampaignStore {
-        assert!(exists<CampaignStore>(platform_address), E_NOT_INITIALIZED);
-        
-        let store = borrow_global_mut<CampaignStore>(platform_address);
-        let campaigns = &mut store.campaigns;
-        let len = vector::length(campaigns);
-        let i = 0;
-        let found = false;
-        
-        while (i < len) {
-            let campaign = vector::borrow_mut(campaigns, i);
-            if (campaign.id == campaign_id) {
-                assert!(campaign.creator == signer::address_of(creator), E_NOT_CREATOR);
-                campaign.active = false;
-                found = true;
-                break
-            };
-            i = i + 1;
-        };
-        
-        assert!(found, E_CAMPAIGN_NOT_FOUND);
+        campaign: &mut Campaign,
+        ctx: &mut TxContext,
+    ) {
+        assert!(campaign.creator == tx_context::sender(ctx), E_NOT_CREATOR);
+
+        let amount = balance::value(&campaign.balance);
+        let withdrawn = coin::from_balance(balance::split(&mut campaign.balance, amount), ctx);
+
+        campaign.active = false;
+
+        event::emit(FundsWithdrawn {
+            campaign_id: object::uid_to_address(&campaign.id),
+            creator: campaign.creator,
+            amount,
+        });
+
+        transfer::public_transfer(withdrawn, campaign.creator);
     }
 
-    // View functions
-    #[view]
-    public fun get_campaign_count(platform_address: address): u64 acquires CampaignStore {
-        if (!exists<CampaignStore>(platform_address)) {
-            return 0
-        };
-        borrow_global<CampaignStore>(platform_address).campaign_count
-    }
-
-    #[view]
-    public fun get_campaigns(platform_address: address): vector<Campaign> acquires CampaignStore {
-        if (!exists<CampaignStore>(platform_address)) {
-            return vector::empty<Campaign>()
-        };
-        *&borrow_global<CampaignStore>(platform_address).campaigns
-    }
-
-    #[view]
-    public fun get_donations(platform_address: address): vector<Donation> acquires CampaignStore {
-        if (!exists<CampaignStore>(platform_address)) {
-            return vector::empty<Donation>()
-        };
-        *&borrow_global<CampaignStore>(platform_address).donations
+    // Read-only accessors
+    public fun get_campaign_info(campaign: &Campaign): (address, String, String, String, u64, u64, bool) {
+        (
+            campaign.creator,
+            campaign.title,
+            campaign.description,
+            campaign.charity_type,
+            campaign.goal_amount,
+            campaign.total_donated,
+            campaign.active,
+        )
     }
 }

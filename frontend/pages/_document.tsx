@@ -6,10 +6,10 @@ export default function Document() {
       <Head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="description" content="Aptos Donation Platform - Transparent blockchain-powered donations" />
+        <meta name="description" content="Sui Donation Platform - Transparent blockchain-powered donations" />
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/favicon.ico" />
-        <title>Aptos Donation Platform</title>
+        <title>Sui Donation Platform</title>
       </Head>
       <body>
         <Main />

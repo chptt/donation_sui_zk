@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import CampaignCard from "@/components/CampaignCard";
-import { getCampaigns, Campaign } from "@/lib/aptosClient";
+import { getCampaigns, Campaign } from "@/lib/suiClient";
+
+const MIST_PER_SUI = 1_000_000_000;
 
 export default function Home() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -22,12 +24,11 @@ export default function Home() {
     setLoading(false);
   };
 
-  const filteredCampaigns = filter === "All" 
-    ? campaigns 
+  const filteredCampaigns = filter === "All"
+    ? campaigns
     : campaigns.filter(c => c.charity_type === filter);
 
   const categories = ["All", "Education", "Healthcare", "Food", "Environment"];
-
   const totalRaised = campaigns.reduce((sum, c) => sum + c.total_donated, 0);
   const activeCampaigns = campaigns.filter(c => c.active).length;
 
@@ -52,8 +53,8 @@ export default function Home() {
               <div className="text-indigo-100">Total Campaigns</div>
             </div>
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 text-center">
-              <div className="text-4xl font-bold mb-2">{(totalRaised / 100000000).toFixed(2)}</div>
-              <div className="text-indigo-100">APT Raised</div>
+              <div className="text-4xl font-bold mb-2">{(totalRaised / MIST_PER_SUI).toFixed(2)}</div>
+              <div className="text-indigo-100">SUI Raised</div>
             </div>
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 text-center">
               <div className="text-4xl font-bold mb-2">{activeCampaigns}</div>
