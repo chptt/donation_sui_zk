@@ -21,7 +21,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={networks} defaultNetwork={network}>
-        <DappKitWalletProvider autoConnect>
+        <DappKitWalletProvider
+          autoConnect
+          preferredWallets={["Slush", "Sui Wallet", "Suiet"]}
+          stashedWallet={{ name: "DonateChain" }}
+        >
           {children}
         </DappKitWalletProvider>
       </SuiClientProvider>

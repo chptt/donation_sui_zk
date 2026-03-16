@@ -1,20 +1,11 @@
+import { useState } from "react";
 import Link from "next/link";
-import { useCurrentAccount, useConnectWallet, useDisconnectWallet, useWallets } from "@/lib/walletProvider";
+import { useCurrentAccount, useDisconnectWallet, ConnectModal } from "@mysten/dapp-kit";
 
 export default function Navbar() {
   const account = useCurrentAccount();
-  const { mutate: connect } = useConnectWallet();
   const { mutate: disconnect } = useDisconnectWallet();
-  const wallets = useWallets();
-
-  const handleConnect = () => {
-    if (wallets.length > 0) {
-      connect({ wallet: wallets[0] });
-    } else {
-      alert("No Sui wallet detected. Please install Sui Wallet or Suiet and refresh.");
-      window.open("https://suiwallet.com/", "_blank");
-    }
-  };
+  const [open, setOpen] = useState(false);
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-50">
@@ -55,12 +46,15 @@ export default function Navbar() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={handleConnect}
-                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2.5 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
-              >
-                Connect Wallet
-              </button>
+              <ConnectModal
+                trigger={
+                  <button className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2.5 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all">
+                    Connect Wallet
+                  </button>
+                }
+                open={open}
+                onOpenChange={setOpen}
+              />
             )}
           </div>
         </div>
