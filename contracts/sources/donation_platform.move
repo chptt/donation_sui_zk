@@ -44,7 +44,7 @@ module donation_platform::donation_platform {
     }
 
     // Create a new campaign (shared object so anyone can donate to it)
-    public entry fun create_campaign(
+    public fun create_campaign(
         title: String,
         description: String,
         charity_type: String,
@@ -77,7 +77,7 @@ module donation_platform::donation_platform {
     }
 
     // Donate SUI coins to a campaign
-    public entry fun donate_to_campaign(
+    public fun donate_to_campaign(
         campaign: &mut Campaign,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
@@ -99,7 +99,7 @@ module donation_platform::donation_platform {
     }
 
     // Withdraw all funds — only the campaign creator can call this
-    public entry fun withdraw_funds(
+    public fun withdraw_funds(
         campaign: &mut Campaign,
         ctx: &mut TxContext,
     ) {
