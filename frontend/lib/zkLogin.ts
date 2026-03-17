@@ -51,7 +51,9 @@ function getUserSalt(sub: string): string {
 export function computeAddressSeed(salt: string, jwt: string): string {
   const decoded = decodeJwt(jwt);
   const aud = Array.isArray(decoded.aud) ? decoded.aud[0] : (decoded.aud as string);
-  return genAddressSeed(BigInt(salt), "sub", decoded.sub as string, aud).toString();
+  const sub = decoded.sub as string;
+  console.log("[zkLogin] computeAddressSeed — sub:", sub, "aud:", aud, "salt:", salt);
+  return genAddressSeed(BigInt(salt), "sub", sub, aud).toString();
 }
 
 /** Redirect to Google OAuth */
@@ -104,6 +106,8 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
 
   // Use getExtendedEphemeralPublicKey — required by the prover
   const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
+  console.log("[zkLogin] extendedEphemeralPublicKey:", extendedEphemeralPublicKey);
+  console.log("[zkLogin] salt:", salt, "randomness:", randomness, "maxEpoch:", maxEpoch);
 
   const zkProof = await fetchZkProof({
     jwt,
@@ -188,7 +192,9 @@ async function fetchZkProof(params: {
       console.error("Prover error:", await res.text());
       return null;
     }
-    return await res.json();
+    const proof = await res.json();
+    console.log("[zkLogin] proof response:", JSON.stringify(proof));
+    return proof;
   } catch (err) {
     console.error("Failed to fetch ZK proof:", err);
     return null;
