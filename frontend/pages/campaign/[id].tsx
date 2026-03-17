@@ -140,7 +140,7 @@ export default function CampaignDetails() {
     const zkSignature = getZkLoginSignature({
       inputs: {
         ...zkSession.zkProof,
-        addressSeed: zkSession.randomness,
+        addressSeed: zkSession.salt,
       },
       maxEpoch: zkSession.maxEpoch,
       userSignature: ephemeralSig,

@@ -47,7 +47,7 @@ export default function CreateCampaign() {
         });
         if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
         const zkSignature = getZkLoginSignature({
-          inputs: { ...zkSession.zkProof, addressSeed: zkSession.randomness },
+          inputs: { ...zkSession.zkProof, addressSeed: zkSession.salt },
           maxEpoch: zkSession.maxEpoch,
           userSignature: ephemeralSig,
         });
