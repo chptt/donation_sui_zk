@@ -1,76 +1,48 @@
-# 💝 DonateChain - Aptos Donation Platform
+# DonateChain - Sui Donation Platform
 
-A decentralized donation platform built on Aptos blockchain where creators can launch charity campaigns and users can donate using cryptocurrency. All transactions are transparent, secure, and recorded on-chain.
+A decentralized donation platform built on the Sui blockchain. Creators launch charity campaigns, donors contribute SUI tokens, and everything is transparent on-chain.
 
-## ✨ Features
+## Features
 
-- 🚀 Create charity campaigns with funding goals
-- 💰 Donate to campaigns using APT tokens
-- 📊 Real-time progress tracking with animated bars
-- 🏆 Leaderboard showcasing top donors
-- 🔐 Secure wallet integration with Petra
-- 🎨 Beautiful, responsive UI with modern design
-- 🌍 Multiple charity categories (Education, Healthcare, Food, Environment)
-- ⛓️ Fully on-chain with Move smart contracts
+- Create charity campaigns with funding goals
+- Donate SUI to campaigns
+- zkLogin — sign in with Google (no wallet extension needed)
+- Traditional wallet support (Sui Wallet, Slush, Suiet)
+- Campaign creators cannot donate to their own campaigns
+- Real-time progress tracking
+- Top donors leaderboard
+- Multiple charity categories: Education, Healthcare, Food, Environment
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Blockchain**: Aptos Testnet
-- **Smart Contract**: Move Language
-- **Frontend**: Next.js 14 + TypeScript
-- **Wallet**: Petra Wallet
-- **Styling**: Tailwind CSS
-- **SDK**: Aptos TypeScript SDK
+- Blockchain: Sui Testnet
+- Smart Contract: Move
+- Frontend: Next.js 14 + TypeScript + Tailwind CSS
+- Auth: zkLogin (Google OAuth) + dapp-kit wallet connect
+- SDK: @mysten/sui, @mysten/dapp-kit
 
-## 📋 Prerequisites
+## Quick Start
 
-- Node.js 18 or higher
-- Aptos CLI
-- Petra Wallet browser extension
-- Basic understanding of blockchain and Web3
-
-## 🚀 Quick Start
-
-### 1. Install Aptos CLI
-
-```bash
-# Windows (PowerShell as Administrator)
-iwr "https://aptos.dev/scripts/install_cli.py" -useb | iex
-
-# Verify installation
-aptos --version
-```
-
-### 2. Deploy Smart Contract
+### 1. Deploy Contract
 
 ```bash
 cd contracts
-aptos init --network testnet
-aptos move compile
-aptos move publish --named-addresses donation_platform=default
+sui client publish --gas-budget 100000000
 ```
 
-Get testnet tokens: https://aptoslabs.com/testnet-faucet
-
-**Important**: Initialize the platform after deployment:
-```bash
-aptos move run --function-id 'YOUR_ADDRESS::donation_platform::initialize'
-```
-
-### 3. Setup Frontend
+### 2. Setup Frontend
 
 ```bash
 cd frontend
-npm install
+npm install --legacy-peer-deps
 ```
 
 Create `.env.local`:
 ```env
-NEXT_PUBLIC_CONTRACT_ADDRESS=0xYOUR_CONTRACT_ADDRESS
-NEXT_PUBLIC_APTOS_NETWORK=testnet
+NEXT_PUBLIC_PACKAGE_ID=your_package_id
+NEXT_PUBLIC_SUI_NETWORK=testnet
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id
 ```
-
-### 4. Run Application
 
 ```bash
 npm run dev
@@ -78,94 +50,41 @@ npm run dev
 
 Visit http://localhost:3000
 
-## 📖 Detailed Documentation
+### 3. Google OAuth Setup (for zkLogin)
 
-See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for comprehensive setup instructions, troubleshooting, and production deployment.
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. Create OAuth 2.0 credentials
+3. Add authorized redirect URI: `http://localhost:3000/zklogin-callback`
+4. Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in `.env.local`
 
-## 🎯 How It Works
-
-1. **Connect Wallet**: Users connect their Petra wallet to the platform
-2. **Create Campaign**: Creators launch campaigns with title, description, category, and funding goal
-3. **Donate**: Users browse campaigns and donate APT tokens
-4. **Track Progress**: Real-time progress bars show funding status
-5. **Leaderboard**: Top donors are recognized on the leaderboard
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-├── contracts/
-│   ├── Move.toml
-│   └── sources/
-│       └── donation_platform.move    # Smart contract
-├── frontend/
-│   ├── pages/
-│   │   ├── index.tsx                 # Home page
-│   │   ├── create.tsx                # Create campaign
-│   │   ├── leaderboard.tsx           # Top donors
-│   │   └── campaign/[id].tsx         # Campaign details
-│   ├── components/
-│   │   ├── Navbar.tsx                # Navigation
-│   │   └── CampaignCard.tsx          # Campaign card
-│   └── lib/
-│       ├── aptosClient.ts            # Blockchain interaction
-│       └── wallet.ts                 # Wallet connection
-└── README.md
+contracts/
+  sources/donation_platform.move   # Move smart contract
+frontend/
+  pages/
+    index.tsx                      # Campaign listing
+    create.tsx                     # Create campaign
+    campaign/[id].tsx              # Campaign details + donate
+    leaderboard.tsx                # Top donors
+    zklogin-callback.tsx           # Google OAuth callback
+  components/
+    Navbar.tsx                     # Nav + wallet/zkLogin connect
+    CampaignCard.tsx               # Campaign card
+  lib/
+    suiClient.ts                   # Sui client + data fetching
+    zkLogin.ts                     # zkLogin utilities
+    zkLoginContext.tsx             # zkLogin React context
+    walletProvider.tsx             # Provider wrapper
 ```
 
-## 🔧 Smart Contract API
+## Smart Contract
 
-### Entry Functions
-- `initialize()` - Initialize platform storage (call once)
-- `create_campaign(title, description, charity_type, goal_amount, platform_address)`
-- `donate_to_campaign(campaign_id, amount, platform_address)`
-- `withdraw_funds(campaign_id, platform_address)` - Creator only
+- `create_campaign(title, description, charity_type, goal_amount)`
+- `donate_to_campaign(campaign, coin)` — creators cannot donate to own campaigns
+- `withdraw_funds(campaign)` — creator only, closes campaign
 
-### View Functions
-- `get_campaigns(platform_address)` - Returns all campaigns
-- `get_donations(platform_address)` - Returns all donations
-- `get_campaign_count(platform_address)` - Returns total campaigns
+## License
 
-## 🎨 Color Palette
-
-- Primary: `#6366f1` (Indigo)
-- Secondary: `#8b5cf6` (Purple)
-- Accent: `#ec4899` (Pink)
-- Success: `#10b981` (Green)
-- Warning: `#f59e0b` (Amber)
-
-## 🔒 Security Features
-
-- Only campaign creators can withdraw funds
-- Donations must be greater than 0
-- Campaigns can be deactivated
-- All transactions require wallet signature
-- Smart contract validation on all operations
-
-## 🌐 Deployment
-
-### Testnet (Development)
-Already configured for Aptos Testnet. Follow Quick Start guide.
-
-### Mainnet (Production)
-1. Switch to mainnet: `aptos init --network mainnet`
-2. Deploy contract with real APT
-3. Update `.env.local` to use mainnet
-4. Deploy frontend to Vercel/Netlify
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-MIT License - feel free to use this project for learning and development.
-
-## 🆘 Support
-
-- Aptos Docs: https://aptos.dev/
-- Petra Wallet: https://petra.app/
-- Aptos Discord: https://discord.gg/aptoslabs
-
-## ⚠️ Disclaimer
-
-This is a demo project for educational purposes. Always audit smart contracts before using in production with real funds.
+MIT
