@@ -16,24 +16,29 @@ export default function ZkLoginCallback() {
         const session = await handleZkLoginCallback();
         if (!session) {
           setStatus("error");
-          setTimeout(() => router.push("/"), 2000);
           return;
         }
+
+        // Set session in context BEFORE any navigation so keypair stays in memory
         setZkSession(session);
         setAddress(session.userAddress);
 
-        // Check if the address has gas
-        const coins = await suiClient.getCoins({ owner: session.userAddress, coinType: "0x2::sui::SUI" });
+        // Check gas
+        const coins = await suiClient.getCoins({
+          owner: session.userAddress,
+          coinType: "0x2::sui::SUI",
+        });
+
         if (coins.data.length === 0) {
           setStatus("no_gas");
         } else {
           setStatus("done");
-          setTimeout(() => router.push("/"), 1500);
+          // Use router.push (soft nav) to keep the React tree alive and preserve keypair in memory
+          router.push("/");
         }
       } catch (err) {
         console.error("zkLogin callback error:", err);
         setStatus("error");
-        setTimeout(() => router.push("/"), 2000);
       }
     }
     process();
@@ -88,7 +93,13 @@ export default function ZkLoginCallback() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="text-5xl mb-4">❌</div>
-          <p className="text-lg text-gray-700">Login failed. Redirecting...</p>
+          <p className="text-lg text-gray-700 mb-4">Login failed. Please try again.</p>
+          <button
+            onClick={() => router.push("/")}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold"
+          >
+            Go Home
+          </button>
         </div>
       </div>
     );

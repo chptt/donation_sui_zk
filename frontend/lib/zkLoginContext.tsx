@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { ZkLoginSession, restoreZkLoginSession, clearZkLoginSession } from "./zkLogin";
 
 interface ZkLoginContextType {
@@ -16,28 +16,36 @@ const ZkLoginContext = createContext<ZkLoginContextType>({
 });
 
 export function ZkLoginProvider({ children }: { children: ReactNode }) {
-  const [zkSession, setZkSessionState] = useState<ZkLoginSession | null>(null);
+  // Keep session in a ref so the keypair object is never re-serialized/deserialized
+  const sessionRef = useRef<ZkLoginSession | null>(null);
+  const [zkAddress, setZkAddress] = useState<string | null>(null);
 
   useEffect(() => {
+    // On mount, try to restore from sessionStorage (page refresh case)
     const session = restoreZkLoginSession();
-    if (session) setZkSessionState(session);
+    if (session) {
+      sessionRef.current = session;
+      setZkAddress(session.userAddress);
+    }
   }, []);
 
   const setZkSession = (session: ZkLoginSession | null) => {
-    setZkSessionState(session);
+    sessionRef.current = session;
+    setZkAddress(session?.userAddress ?? null);
   };
 
   const logout = () => {
     clearZkLoginSession();
-    setZkSessionState(null);
+    sessionRef.current = null;
+    setZkAddress(null);
   };
 
   return (
     <ZkLoginContext.Provider
       value={{
-        zkSession,
+        get zkSession() { return sessionRef.current; },
         setZkSession,
-        zkAddress: zkSession?.userAddress ?? null,
+        zkAddress,
         logout,
       }}
     >
