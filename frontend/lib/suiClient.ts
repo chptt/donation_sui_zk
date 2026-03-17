@@ -4,7 +4,10 @@ const network = (process.env.NEXT_PUBLIC_SUI_NETWORK as "mainnet" | "testnet" | 
 
 export const suiClient = new SuiClient({ url: getFullnodeUrl(network) });
 
+// New (upgraded) package ID — used for transaction calls
 export const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID || "";
+// Original package ID — events are always emitted under the original ID on Sui upgrades
+export const ORIGINAL_PACKAGE_ID = process.env.NEXT_PUBLIC_ORIGINAL_PACKAGE_ID || PACKAGE_ID;
 export const MODULE_NAME = "donation_platform";
 
 export interface Campaign {
@@ -24,7 +27,7 @@ export async function getCampaigns(): Promise<Campaign[]> {
   if (!PACKAGE_ID) return [];
   try {
     const events = await suiClient.queryEvents({
-      query: { MoveEventType: `${PACKAGE_ID}::${MODULE_NAME}::CampaignCreated` },
+      query: { MoveEventType: `${ORIGINAL_PACKAGE_ID}::${MODULE_NAME}::CampaignCreated` },
       limit: 50,
     });
 
@@ -68,7 +71,7 @@ export async function getDonorStats(): Promise<DonorStats[]> {
   if (!PACKAGE_ID) return [];
   try {
     const events = await suiClient.queryEvents({
-      query: { MoveEventType: `${PACKAGE_ID}::${MODULE_NAME}::DonationMade` },
+      query: { MoveEventType: `${ORIGINAL_PACKAGE_ID}::${MODULE_NAME}::DonationMade` },
       limit: 200,
     });
 
