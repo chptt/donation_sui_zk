@@ -1,20 +1,22 @@
-import { generateNonce, generateRandomness, jwtToAddress, decodeJwt } from "@mysten/sui/zklogin";
+import {
+  generateNonce,
+  generateRandomness,
+  jwtToAddress,
+  decodeJwt,
+  getExtendedEphemeralPublicKey,
+  genAddressSeed,
+} from "@mysten/sui/zklogin";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { SuiClient } from "@mysten/sui/client";
 
-// Prover service endpoint (Mysten Labs public prover for testnet)
 export const PROVER_URL = "https://prover-dev.mystenlabs.com/v1";
-
-// Google OAuth client ID — set NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env.local
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
-
 export const MAX_EPOCH_DURATION = 2;
 
 export interface ZkLoginSession {
   ephemeralKeyPair: Ed25519Keypair;
   randomness: string;
   salt: string;
-  nonce: string;
   maxEpoch: number;
   userAddress: string;
   jwt: string;
@@ -34,22 +36,25 @@ export interface ZkProof {
   headerBase64: string;
 }
 
-/**
- * Get or create a stable 16-byte salt for this Google sub claim.
- * Stored in localStorage so the same user always gets the same address.
- */
+/** Stable salt per Google sub — stored in localStorage */
 function getUserSalt(sub: string): string {
   const key = `zklogin_salt_${sub}`;
   let salt = localStorage.getItem(key);
   if (!salt) {
-    // generateRandomness() returns a bigint string suitable as a 16-byte salt
     salt = generateRandomness();
     localStorage.setItem(key, salt);
   }
   return salt;
 }
 
-/** Generate ephemeral keypair + nonce, store in sessionStorage, redirect to Google */
+/** Compute the addressSeed needed for getZkLoginSignature */
+export function computeAddressSeed(salt: string, jwt: string): string {
+  const decoded = decodeJwt(jwt);
+  const aud = Array.isArray(decoded.aud) ? decoded.aud[0] : (decoded.aud as string);
+  return genAddressSeed(BigInt(salt), "sub", decoded.sub as string, aud).toString();
+}
+
+/** Redirect to Google OAuth */
 export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   if (!GOOGLE_CLIENT_ID) throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set");
 
@@ -75,7 +80,7 @@ export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-/** Called on the callback page — extracts JWT, computes address with proper salt, fetches proof */
+/** Handle OAuth callback — build full session with ZK proof */
 export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   if (typeof window === "undefined") return null;
 
@@ -87,25 +92,22 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   const secretKey = sessionStorage.getItem("zklogin_ephemeral_secret");
   const randomness = sessionStorage.getItem("zklogin_randomness");
   const maxEpoch = sessionStorage.getItem("zklogin_max_epoch");
-
   if (!secretKey || !randomness || !maxEpoch) return null;
 
-  // Decode JWT to get the sub claim for stable salt derivation
   const decoded = decodeJwt(jwt);
   const sub = decoded.sub as string;
   if (!sub) return null;
 
-  // Get stable 16-byte salt for this user
   const salt = getUserSalt(sub);
-
   const ephemeralKeyPair = Ed25519Keypair.fromSecretKey(secretKey);
-
-  // jwtToAddress uses the salt to derive the on-chain address
   const userAddress = jwtToAddress(jwt, salt);
+
+  // Use getExtendedEphemeralPublicKey — required by the prover
+  const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
 
   const zkProof = await fetchZkProof({
     jwt,
-    ephemeralPublicKey: ephemeralKeyPair.getPublicKey().toBase64(),
+    extendedEphemeralPublicKey,
     maxEpoch: Number(maxEpoch),
     randomness,
     salt,
@@ -115,7 +117,6 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
     ephemeralKeyPair,
     randomness,
     salt,
-    nonce: "",
     maxEpoch: Number(maxEpoch),
     userAddress,
     jwt,
@@ -135,7 +136,6 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   return session;
 }
 
-/** Restore session from sessionStorage */
 export function restoreZkLoginSession(): ZkLoginSession | null {
   if (typeof window === "undefined") return null;
   const raw = sessionStorage.getItem("zklogin_session");
@@ -147,7 +147,6 @@ export function restoreZkLoginSession(): ZkLoginSession | null {
       ephemeralKeyPair,
       randomness: data.randomness,
       salt: data.salt,
-      nonce: "",
       maxEpoch: Number(data.maxEpoch),
       userAddress: data.userAddress,
       jwt: data.jwt,
@@ -167,7 +166,7 @@ export function clearZkLoginSession(): void {
 
 async function fetchZkProof(params: {
   jwt: string;
-  ephemeralPublicKey: string;
+  extendedEphemeralPublicKey: string;
   maxEpoch: number;
   randomness: string;
   salt: string;
@@ -178,10 +177,10 @@ async function fetchZkProof(params: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         jwt: params.jwt,
-        extendedEphemeralPublicKey: params.ephemeralPublicKey,
+        extendedEphemeralPublicKey: params.extendedEphemeralPublicKey,
         maxEpoch: params.maxEpoch,
         jwtRandomness: params.randomness,
-        salt: params.salt,          // 16-byte bigint string from generateRandomness()
+        salt: params.salt,
         keyClaimName: "sub",
       }),
     });

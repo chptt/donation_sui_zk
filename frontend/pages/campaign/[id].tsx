@@ -4,7 +4,8 @@ import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-ki
 import { Transaction } from "@mysten/sui/transactions";
 import { getCampaigns, Campaign, PACKAGE_ID, MODULE_NAME } from "@/lib/suiClient";
 import { useZkLogin } from "@/lib/zkLoginContext";
-import { getZkLoginSignature, genAddressSeed, decodeJwt } from "@mysten/sui/zklogin";
+import { getZkLoginSignature } from "@mysten/sui/zklogin";
+import { computeAddressSeed } from "@/lib/zkLogin";
 import { suiClient } from "@/lib/suiClient";
 
 const MIST_PER_SUI = 1_000_000_000;
@@ -137,14 +138,7 @@ export default function CampaignDetails() {
 
     if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
 
-    const decoded = decodeJwt(zkSession.jwt);
-    const addressSeed = genAddressSeed(
-      BigInt(zkSession.salt),
-      "sub",
-      decoded.sub as string,
-      decoded.aud as string,
-    ).toString();
-
+    const addressSeed = computeAddressSeed(zkSession.salt, zkSession.jwt);
     const zkSignature = getZkLoginSignature({
       inputs: { ...zkSession.zkProof, addressSeed },
       maxEpoch: zkSession.maxEpoch,
