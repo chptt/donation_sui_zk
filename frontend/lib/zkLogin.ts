@@ -107,6 +107,7 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   // Use getExtendedEphemeralPublicKey — required by the prover
   const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
   console.log("[zkLogin] extendedEphemeralPublicKey:", extendedEphemeralPublicKey);
+  console.log("[zkLogin] pubkey base64:", ephemeralKeyPair.getPublicKey().toBase64());
   console.log("[zkLogin] salt:", salt, "randomness:", randomness, "maxEpoch:", maxEpoch);
 
   const zkProof = await fetchZkProof({

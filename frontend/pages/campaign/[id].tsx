@@ -131,6 +131,11 @@ export default function CampaignDetails() {
     if (!zkSession) throw new Error("No zkLogin session");
 
     tx.setSender(zkSession.userAddress);
+
+    console.log("[sign] ephemeral pubkey:", zkSession.ephemeralKeyPair.getPublicKey().toBase64());
+    console.log("[sign] maxEpoch:", zkSession.maxEpoch);
+    console.log("[sign] zkProof exists:", !!zkSession.zkProof);
+
     const { bytes, signature: ephemeralSig } = await tx.sign({
       client: suiClient,
       signer: zkSession.ephemeralKeyPair,
@@ -139,6 +144,8 @@ export default function CampaignDetails() {
     if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
 
     const addressSeed = computeAddressSeed(zkSession.salt, zkSession.jwt);
+    console.log("[sign] addressSeed:", addressSeed);
+
     const zkSignature = getZkLoginSignature({
       inputs: { ...zkSession.zkProof, addressSeed },
       maxEpoch: zkSession.maxEpoch,
