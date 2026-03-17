@@ -9,6 +9,7 @@ module donation_platform::donation_platform {
     const E_NOT_CREATOR: u64 = 1;
     const E_INVALID_AMOUNT: u64 = 2;
     const E_CAMPAIGN_NOT_ACTIVE: u64 = 3;
+    const E_SELF_DONATION: u64 = 4;
 
     // Campaign object (lives on-chain as a shared object)
     public struct Campaign has key, store {
@@ -83,6 +84,7 @@ module donation_platform::donation_platform {
         ctx: &mut TxContext,
     ) {
         assert!(campaign.active, E_CAMPAIGN_NOT_ACTIVE);
+        assert!(campaign.creator != tx_context::sender(ctx), E_SELF_DONATION);
         let amount = coin::value(&payment);
         assert!(amount > 0, E_INVALID_AMOUNT);
 

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
-import { useCurrentAccount } from "@mysten/dapp-kit";
-import { useSignAndExecuteTransaction } from "@mysten/dapp-kit";
+import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
-import { PACKAGE_ID, MODULE_NAME } from "@/lib/suiClient";
+import { PACKAGE_ID, MODULE_NAME, suiClient } from "@/lib/suiClient";
+import { useZkLogin } from "@/lib/zkLoginContext";
+import { getZkLoginSignature } from "@mysten/sui/zklogin";
 
 const MIST_PER_SUI = 1_000_000_000;
 
@@ -11,6 +12,8 @@ export default function CreateCampaign() {
   const router = useRouter();
   const account = useCurrentAccount();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
+  const { zkSession, zkAddress } = useZkLogin();
+  const activeAddress = zkAddress ?? account?.address ?? null;
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -21,7 +24,7 @@ export default function CreateCampaign() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!account) { alert("Please connect your wallet first"); return; }
+    if (!activeAddress) { alert("Please connect your wallet or sign in with Google first"); return; }
     setLoading(true);
     try {
       const goalInMist = Math.floor(parseFloat(formData.goal_amount) * MIST_PER_SUI);
@@ -35,7 +38,28 @@ export default function CreateCampaign() {
           tx.pure.u64(goalInMist),
         ],
       });
-      await signAndExecute({ transaction: tx });
+
+      if (zkSession) {
+        tx.setSender(zkSession.userAddress);
+        const { bytes, signature: ephemeralSig } = await tx.sign({
+          client: suiClient,
+          signer: zkSession.ephemeralKeyPair,
+        });
+        if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
+        const zkSignature = getZkLoginSignature({
+          inputs: { ...zkSession.zkProof, addressSeed: zkSession.randomness },
+          maxEpoch: zkSession.maxEpoch,
+          userSignature: ephemeralSig,
+        });
+        await suiClient.executeTransactionBlock({
+          transactionBlock: bytes,
+          signature: zkSignature,
+          options: { showEffects: true },
+        });
+      } else {
+        await signAndExecute({ transaction: tx });
+      }
+
       alert("Campaign created successfully!");
       router.push("/");
     } catch (error) {

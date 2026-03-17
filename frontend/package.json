@@ -11,6 +11,8 @@
   "dependencies": {
     "@mysten/dapp-kit": "^0.14.53",
     "@mysten/sui": "^1.24.0",
+    "@mysten/zklogin": "^0.8.1",
+    "@noble/hashes": "^2.0.1",
     "@tanstack/react-query": "^5.90.21",
     "next": "14.1.0",
     "react": "^18.2.0",

@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { SuiClientProvider, WalletProvider as DappKitWalletProvider } from "@mysten/dapp-kit";
 import { getFullnodeUrl } from "@mysten/sui/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ZkLoginProvider } from "./zkLoginContext";
 
 const queryClient = new QueryClient();
 
@@ -26,11 +27,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
           preferredWallets={["Slush", "Sui Wallet", "Suiet"]}
           stashedWallet={{ name: "DonateChain" }}
         >
-          {children}
+          <ZkLoginProvider>{children}</ZkLoginProvider>
         </DappKitWalletProvider>
       </SuiClientProvider>
     </QueryClientProvider>
   );
 }
-
-export { useCurrentAccount, useConnectWallet, useDisconnectWallet, useWallets } from "@mysten/dapp-kit";

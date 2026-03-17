@@ -3,6 +3,9 @@ import { useRouter } from "next/router";
 import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
 import { getCampaigns, Campaign, PACKAGE_ID, MODULE_NAME } from "@/lib/suiClient";
+import { useZkLogin } from "@/lib/zkLoginContext";
+import { getZkLoginSignature } from "@mysten/sui/zklogin";
+import { suiClient } from "@/lib/suiClient";
 
 const MIST_PER_SUI = 1_000_000_000;
 
@@ -18,11 +21,16 @@ export default function CampaignDetails() {
   const { id } = router.query;
   const account = useCurrentAccount();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
+  const { zkSession, zkAddress } = useZkLogin();
+
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [donationAmount, setDonationAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Active address: zkLogin takes priority over wallet
+  const activeAddress = zkAddress ?? account?.address ?? null;
 
   useEffect(() => {
     if (id) loadCampaign();
@@ -52,10 +60,16 @@ export default function CampaignDetails() {
       alert("Please enter a valid donation amount");
       return;
     }
-    if (!account) {
-      alert("Please connect your wallet first");
+    if (!activeAddress) {
+      alert("Please connect your wallet or sign in with Google first");
       return;
     }
+    // Block self-donation
+    if (activeAddress === campaign?.creator) {
+      alert("Campaign creators cannot donate to their own campaigns.");
+      return;
+    }
+
     setLoading(true);
     try {
       const amountInMist = Math.floor(parseFloat(donationAmount) * MIST_PER_SUI);
@@ -65,7 +79,14 @@ export default function CampaignDetails() {
         target: `${PACKAGE_ID}::${MODULE_NAME}::donate_to_campaign`,
         arguments: [tx.object(campaign!.id), coin],
       });
-      await signAndExecute({ transaction: tx });
+
+      if (zkSession) {
+        // Execute with zkLogin signature
+        await executeWithZkLogin(tx);
+      } else {
+        await signAndExecute({ transaction: tx });
+      }
+
       alert("Donation successful! Thank you for your support!");
       setDonationAmount("");
       loadCampaign();
@@ -77,7 +98,10 @@ export default function CampaignDetails() {
   };
 
   const handleWithdraw = async () => {
-    if (!account) { alert("Please connect your wallet first"); return; }
+    if (!activeAddress) {
+      alert("Please connect your wallet or sign in with Google first");
+      return;
+    }
     setLoading(true);
     try {
       const tx = new Transaction();
@@ -85,7 +109,13 @@ export default function CampaignDetails() {
         target: `${PACKAGE_ID}::${MODULE_NAME}::withdraw_funds`,
         arguments: [tx.object(campaign!.id)],
       });
-      await signAndExecute({ transaction: tx });
+
+      if (zkSession) {
+        await executeWithZkLogin(tx);
+      } else {
+        await signAndExecute({ transaction: tx });
+      }
+
       alert("Funds withdrawn successfully!");
       loadCampaign();
     } catch (error) {
@@ -93,6 +123,34 @@ export default function CampaignDetails() {
       alert("Failed to withdraw. Please try again.");
     }
     setLoading(false);
+  };
+
+  /** Execute a transaction using the zkLogin ephemeral key + ZK proof */
+  const executeWithZkLogin = async (tx: Transaction) => {
+    if (!zkSession) throw new Error("No zkLogin session");
+
+    tx.setSender(zkSession.userAddress);
+    const { bytes, signature: ephemeralSig } = await tx.sign({
+      client: suiClient,
+      signer: zkSession.ephemeralKeyPair,
+    });
+
+    if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
+
+    const zkSignature = getZkLoginSignature({
+      inputs: {
+        ...zkSession.zkProof,
+        addressSeed: zkSession.randomness,
+      },
+      maxEpoch: zkSession.maxEpoch,
+      userSignature: ephemeralSig,
+    });
+
+    await suiClient.executeTransactionBlock({
+      transactionBlock: bytes,
+      signature: zkSignature,
+      options: { showEffects: true },
+    });
   };
 
   if (pageLoading) {
@@ -121,7 +179,7 @@ export default function CampaignDetails() {
     ? (campaign.total_donated / campaign.goal_amount) * 100
     : 0;
 
-  const isCreator = account?.address === campaign.creator;
+  const isCreator = activeAddress === campaign.creator;
 
   return (
     <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -163,7 +221,8 @@ export default function CampaignDetails() {
             </div>
           </div>
 
-          {campaign.active && (
+          {/* Donation section — hidden for campaign creator */}
+          {campaign.active && !isCreator && (
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 mb-4">
               <h3 className="text-xl font-bold text-gray-900 mb-4">Make a Donation</h3>
               <div className="flex gap-4">
@@ -186,6 +245,13 @@ export default function CampaignDetails() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Info banner for creator */}
+          {campaign.active && isCreator && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-800">
+              You created this campaign and cannot donate to it.
             </div>
           )}
 
