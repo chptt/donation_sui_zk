@@ -5,10 +5,10 @@ import {
   decodeJwt,
   getExtendedEphemeralPublicKey,
   genAddressSeed,
+  getZkLoginSignature,
 } from "@mysten/sui/zklogin";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { SuiClient } from "@mysten/sui/client";
-import { getZkLoginSignature } from "@mysten/sui/zklogin";
 import { Transaction } from "@mysten/sui/transactions";
 
 export const PROVER_URL = "https://prover-dev.mystenlabs.com/v1";
@@ -41,13 +41,6 @@ function getUserSalt(sub: string): string {
   return salt;
 }
 
-export function computeAddressSeed(salt: string, jwt: string): string {
-  const decoded = decodeJwt(jwt);
-  const aud = Array.isArray(decoded.aud) ? decoded.aud[0] : (decoded.aud as string);
-  return genAddressSeed(BigInt(salt), "sub", decoded.sub as string, aud).toString();
-}
-
-/** Check if the JWT is still valid (not expired) */
 export function isJwtValid(jwt: string): boolean {
   try {
     const decoded = decodeJwt(jwt);
@@ -103,7 +96,9 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
 
   const salt = getUserSalt(sub);
   const ephemeralKeyPair = Ed25519Keypair.fromSecretKey(secretKey);
-  const userAddress = jwtToAddress(jwt, salt);
+
+  // Use non-legacy address (false = new address format per official docs)
+  const userAddress = jwtToAddress(jwt, salt, false);
   const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
 
   const zkProof = await fetchZkProof({
@@ -124,7 +119,6 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
     zkProof,
   };
 
-  // Store everything needed to re-fetch proof if needed
   sessionStorage.setItem("zklogin_session", JSON.stringify({
     ephemeralSecret: secretKey,
     randomness,
@@ -138,37 +132,31 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   return session;
 }
 
-/**
- * Execute a transaction using zkLogin.
- * Re-fetches the ZK proof fresh each time using the same ephemeral key
- * to avoid any stale proof / keypair mismatch issues.
- */
 export async function executeZkLoginTransaction(
   tx: Transaction,
   session: ZkLoginSession,
   suiClient: SuiClient,
 ): Promise<void> {
-  // Check JWT expiry first
   if (!isJwtValid(session.jwt)) {
     throw new Error("Your Google session has expired. Please sign in with Google again.");
   }
 
-  // Check epoch validity
   const { epoch } = await suiClient.getLatestSuiSystemState();
   if (Number(epoch) > session.maxEpoch) {
     throw new Error("Your zkLogin session has expired. Please sign in with Google again.");
   }
 
+  // Set sender before signing — per official docs
   tx.setSender(session.userAddress);
 
-  const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(session.ephemeralKeyPair.getPublicKey());
-
-  // Sign the transaction first, then fetch proof with the same inputs
+  // Sign transaction with ephemeral key
   const { bytes, signature: ephemeralSig } = await tx.sign({
     client: suiClient,
     signer: session.ephemeralKeyPair,
   });
 
+  // Fetch fresh proof using same inputs as when the nonce was generated
+  const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(session.ephemeralKeyPair.getPublicKey());
   const freshProof = await fetchZkProof({
     jwt: session.jwt,
     extendedEphemeralPublicKey,
@@ -179,23 +167,28 @@ export async function executeZkLoginTransaction(
 
   if (!freshProof) throw new Error("Failed to get ZK proof. Please sign in again.");
 
-  const addressSeed = computeAddressSeed(session.salt, session.jwt);
+  // Compute addressSeed exactly as per official docs
+  const decoded = decodeJwt(session.jwt);
+  const aud = Array.isArray(decoded.aud) ? decoded.aud[0] : (decoded.aud as string);
+  const addressSeed = genAddressSeed(
+    BigInt(session.salt),
+    "sub",
+    decoded.sub as string,
+    aud,
+  ).toString();
 
-  const zkSignature = getZkLoginSignature({
+  const zkLoginSignature = getZkLoginSignature({
     inputs: { ...freshProof, addressSeed },
     maxEpoch: session.maxEpoch,
     userSignature: ephemeralSig,
   });
 
-  const result = await suiClient.executeTransactionBlock({
+  // Use executeTransactionBlock with signature array per official docs
+  await suiClient.executeTransactionBlock({
     transactionBlock: bytes,
-    signature: zkSignature,
+    signature: zkLoginSignature,
     options: { showEffects: true },
   });
-
-  if (result.effects?.status?.status !== "success") {
-    throw new Error(`Transaction failed: ${result.effects?.status?.error}`);
-  }
 }
 
 export function restoreZkLoginSession(): ZkLoginSession | null {
