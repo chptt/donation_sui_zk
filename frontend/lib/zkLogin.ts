@@ -47,6 +47,18 @@ export function computeAddressSeed(salt: string, jwt: string): string {
   return genAddressSeed(BigInt(salt), "sub", decoded.sub as string, aud).toString();
 }
 
+/** Check if the JWT is still valid (not expired) */
+export function isJwtValid(jwt: string): boolean {
+  try {
+    const decoded = decodeJwt(jwt);
+    const exp = decoded.exp as number;
+    if (!exp) return false;
+    return Date.now() / 1000 < exp;
+  } catch {
+    return false;
+  }
+}
+
 export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   if (!GOOGLE_CLIENT_ID) throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set");
 
@@ -136,10 +148,26 @@ export async function executeZkLoginTransaction(
   session: ZkLoginSession,
   suiClient: SuiClient,
 ): Promise<void> {
+  // Check JWT expiry first
+  if (!isJwtValid(session.jwt)) {
+    throw new Error("Your Google session has expired. Please sign in with Google again.");
+  }
+
+  // Check epoch validity
+  const { epoch } = await suiClient.getLatestSuiSystemState();
+  if (Number(epoch) > session.maxEpoch) {
+    throw new Error("Your zkLogin session has expired. Please sign in with Google again.");
+  }
+
   tx.setSender(session.userAddress);
 
-  // Always re-fetch proof fresh — guarantees proof matches the keypair being used
   const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(session.ephemeralKeyPair.getPublicKey());
+
+  // Sign the transaction first, then fetch proof with the same inputs
+  const { bytes, signature: ephemeralSig } = await tx.sign({
+    client: suiClient,
+    signer: session.ephemeralKeyPair,
+  });
 
   const freshProof = await fetchZkProof({
     jwt: session.jwt,
@@ -150,11 +178,6 @@ export async function executeZkLoginTransaction(
   });
 
   if (!freshProof) throw new Error("Failed to get ZK proof. Please sign in again.");
-
-  const { bytes, signature: ephemeralSig } = await tx.sign({
-    client: suiClient,
-    signer: session.ephemeralKeyPair,
-  });
 
   const addressSeed = computeAddressSeed(session.salt, session.jwt);
 
