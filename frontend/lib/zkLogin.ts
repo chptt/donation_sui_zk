@@ -1,52 +1,35 @@
 import {
-  generateNonce,
-  generateRandomness,
-  jwtToAddress,
-  decodeJwt,
   genAddressSeed,
   getZkLoginSignature,
+  decodeJwt,
 } from "@mysten/sui/zklogin";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
-export const PROVER_URL = "https://prover.mystenlabs.com/v1";
+export const ENOKI_API_KEY = process.env.NEXT_PUBLIC_ENOKI_API_KEY || "";
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 export const MAX_EPOCH_DURATION = 2;
 
 /**
- * The Mysten prover expects extendedEphemeralPublicKey as the decimal string
- * of the big-endian integer of publicKey.toSuiBytes() (flag byte + 32 raw bytes).
- * This is the same value the nonce is computed from internally.
- * Do NOT use getExtendedEphemeralPublicKey() from the SDK — it returns a base64
- * string (toSuiPublicKey) which the prover rejects.
+ * Enoki ZKP endpoint expects ephemeralPublicKey as raw 32-byte base64
+ * (no flag byte prefix — NOT toSuiPublicKey which is 33 bytes with flag).
  */
-function computeExtendedEphemeralPublicKey(publicKey: PublicKey): string {
-  const suiBytes = publicKey.toSuiBytes(); // [flag, ...32 raw bytes]
-  const hex = Array.from(suiBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-  return BigInt("0x" + hex).toString();
+function toRawBase64(publicKey: PublicKey): string {
+  const raw = publicKey.toRawBytes(); // 32 bytes, no flag
+  return btoa(Array.from(raw).map(b => String.fromCharCode(b)).join(""));
 }
 
 export interface ZkLoginSession {
   ephemeralKeyPair: Ed25519Keypair;
-  // Store the extended public key string at creation time — never recompute from restored keypair
-  extendedEphemeralPublicKey: string;
+  // Raw 32-byte base64 public key — what Enoki ZKP endpoint expects
+  ephemeralPublicKeyB64: string;
   randomness: string;
   salt: string;
   maxEpoch: number;
   userAddress: string;
   jwt: string;
-}
-
-function getUserSalt(sub: string): string {
-  const key = `zklogin_salt_${sub}`;
-  let salt = localStorage.getItem(key);
-  if (!salt) {
-    salt = generateRandomness();
-    localStorage.setItem(key, salt);
-  }
-  return salt;
 }
 
 export function isJwtValid(jwt: string): boolean {
@@ -60,31 +43,39 @@ export function isJwtValid(jwt: string): boolean {
   }
 }
 
-/** Step 1: Generate nonce, store ephemeral key, redirect to Google */
+/** Step 1: Generate nonce via Enoki, store ephemeral key, redirect to Google */
 export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   if (!GOOGLE_CLIENT_ID) throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set");
-
-  const { epoch } = await suiClient.getLatestSuiSystemState();
-  const maxEpoch = Number(epoch) + MAX_EPOCH_DURATION;
+  if (!ENOKI_API_KEY) throw new Error("NEXT_PUBLIC_ENOKI_API_KEY is not set");
 
   const ephemeralKeyPair = new Ed25519Keypair();
-  const randomness = generateRandomness();
-  const nonce = generateNonce(ephemeralKeyPair.getPublicKey(), maxEpoch, randomness);
+  const ephemeralPublicKeyB64 = toRawBase64(ephemeralKeyPair.getPublicKey());
 
-  // Compute and store extendedEphemeralPublicKey NOW — same instance used for nonce
-  // Must be the decimal string of toSuiBytes() bigint — that's what the prover expects
-  const extendedEphemeralPublicKey = computeExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
+  // Get nonce + randomness + maxEpoch from Enoki
+  const nonceRes = await fetch("https://api.enoki.mystenlabs.com/v1/zklogin/nonce", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${ENOKI_API_KEY}`,
+    },
+    body: JSON.stringify({ ephemeralPublicKey: ephemeralPublicKeyB64, network: "testnet" }),
+  });
+  if (!nonceRes.ok) {
+    const err = await nonceRes.text();
+    throw new Error(`Enoki nonce error: ${err}`);
+  }
+  const { data } = await nonceRes.json();
+  const { nonce, randomness, maxEpoch } = data;
 
   console.log("[zkLogin:init] maxEpoch:", maxEpoch);
   console.log("[zkLogin:init] randomness:", randomness);
   console.log("[zkLogin:init] nonce:", nonce);
-  console.log("[zkLogin:init] extendedEphemeralPublicKey:", extendedEphemeralPublicKey);
+  console.log("[zkLogin:init] ephemeralPublicKeyB64:", ephemeralPublicKeyB64);
 
   sessionStorage.setItem("zklogin_ephemeral_secret", ephemeralKeyPair.getSecretKey());
   sessionStorage.setItem("zklogin_randomness", randomness);
   sessionStorage.setItem("zklogin_max_epoch", String(maxEpoch));
-  // Store the extended public key string — this is what the prover must use
-  sessionStorage.setItem("zklogin_extended_epk", extendedEphemeralPublicKey);
+  sessionStorage.setItem("zklogin_epk_b64", ephemeralPublicKeyB64);
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -97,7 +88,7 @@ export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-/** Step 2: Handle OAuth callback — build session using stored values */
+/** Step 2: Handle OAuth callback — get salt from Enoki, build session */
 export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   if (typeof window === "undefined") return null;
 
@@ -109,32 +100,40 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   const secretKey = sessionStorage.getItem("zklogin_ephemeral_secret");
   const randomness = sessionStorage.getItem("zklogin_randomness");
   const maxEpoch = sessionStorage.getItem("zklogin_max_epoch");
-  // Use the stored extended public key — NOT recomputed from restored keypair
-  const extendedEphemeralPublicKey = sessionStorage.getItem("zklogin_extended_epk");
+  const ephemeralPublicKeyB64 = sessionStorage.getItem("zklogin_epk_b64");
 
-  if (!secretKey || !randomness || !maxEpoch || !extendedEphemeralPublicKey) {
+  if (!secretKey || !randomness || !maxEpoch || !ephemeralPublicKeyB64) {
     console.error("[zkLogin:callback] Missing session storage values");
     return null;
   }
 
-  const decoded = decodeJwt(jwt);
-  const sub = decoded.sub as string;
-  if (!sub) return null;
+  // Get salt + address from Enoki using the JWT
+  const saltRes = await fetch("https://api.enoki.mystenlabs.com/v1/zklogin", {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${ENOKI_API_KEY}`,
+      "zklogin-jwt": jwt,
+    },
+  });
+  if (!saltRes.ok) {
+    console.error("[zkLogin:callback] Enoki salt error:", await saltRes.text());
+    return null;
+  }
+  const { data: saltData } = await saltRes.json();
+  const salt = saltData.salt as string;
+  const userAddress = saltData.address as string;
 
-  const salt = getUserSalt(sub);
   const ephemeralKeyPair = Ed25519Keypair.fromSecretKey(secretKey);
-  const userAddress = jwtToAddress(jwt, salt);
 
-  console.log("[zkLogin:callback] sub:", sub);
   console.log("[zkLogin:callback] salt:", salt);
   console.log("[zkLogin:callback] maxEpoch:", maxEpoch);
   console.log("[zkLogin:callback] randomness:", randomness);
-  console.log("[zkLogin:callback] extendedEphemeralPublicKey:", extendedEphemeralPublicKey);
+  console.log("[zkLogin:callback] ephemeralPublicKeyB64:", ephemeralPublicKeyB64);
   console.log("[zkLogin:callback] userAddress:", userAddress);
 
   const session: ZkLoginSession = {
     ephemeralKeyPair,
-    extendedEphemeralPublicKey, // stored string — guaranteed same as nonce generation
+    ephemeralPublicKeyB64,
     randomness,
     salt,
     maxEpoch: Number(maxEpoch),
@@ -142,10 +141,9 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
     jwt,
   };
 
-  // Persist for page refresh recovery
   sessionStorage.setItem("zklogin_session", JSON.stringify({
     ephemeralSecret: secretKey,
-    extendedEphemeralPublicKey,
+    ephemeralPublicKeyB64,
     randomness,
     salt,
     maxEpoch,
@@ -179,15 +177,15 @@ export async function executeZkLoginTransaction(
     signer: session.ephemeralKeyPair,
   });
 
-  console.log("[zkLogin:exec] extendedEphemeralPublicKey:", session.extendedEphemeralPublicKey);
+  console.log("[zkLogin:exec] ephemeralPublicKeyB64:", session.ephemeralPublicKeyB64);
   console.log("[zkLogin:exec] maxEpoch:", session.maxEpoch);
   console.log("[zkLogin:exec] randomness:", session.randomness);
   console.log("[zkLogin:exec] salt:", session.salt);
 
-  // Fetch proof using the STORED extended public key — same one used to generate the nonce
+  // Fetch proof from Enoki ZKP endpoint
   const proof = await fetchZkProof({
     jwt: session.jwt,
-    extendedEphemeralPublicKey: session.extendedEphemeralPublicKey,
+    ephemeralPublicKeyB64: session.ephemeralPublicKeyB64,
     maxEpoch: session.maxEpoch,
     randomness: session.randomness,
     salt: session.salt,
@@ -231,7 +229,7 @@ export function restoreZkLoginSession(): ZkLoginSession | null {
     const ephemeralKeyPair = Ed25519Keypair.fromSecretKey(data.ephemeralSecret);
     return {
       ephemeralKeyPair,
-      extendedEphemeralPublicKey: data.extendedEphemeralPublicKey,
+      ephemeralPublicKeyB64: data.ephemeralPublicKeyB64,
       randomness: data.randomness,
       salt: data.salt,
       maxEpoch: Number(data.maxEpoch),
@@ -248,30 +246,31 @@ export function clearZkLoginSession(): void {
   sessionStorage.removeItem("zklogin_ephemeral_secret");
   sessionStorage.removeItem("zklogin_randomness");
   sessionStorage.removeItem("zklogin_max_epoch");
-  sessionStorage.removeItem("zklogin_extended_epk");
+  sessionStorage.removeItem("zklogin_epk_b64");
 }
 
 async function fetchZkProof(params: {
   jwt: string;
-  extendedEphemeralPublicKey: string;
+  ephemeralPublicKeyB64: string;
   maxEpoch: number;
   randomness: string;
   salt: string;
 }): Promise<{ proofPoints: { a: string[]; b: string[][]; c: string[] }; issBase64Details: { value: string; indexMod4: number }; headerBase64: string } | null> {
   try {
     const body = {
-      jwt: params.jwt,
-      extendedEphemeralPublicKey: params.extendedEphemeralPublicKey,
+      ephemeralPublicKey: params.ephemeralPublicKeyB64,
       maxEpoch: params.maxEpoch,
-      jwtRandomness: params.randomness,
-      salt: params.salt,
-      keyClaimName: "sub",
+      randomness: params.randomness,
     };
-    console.log("[zkLogin:prover] request:", JSON.stringify(body));
+    console.log("[zkLogin:prover] request body:", JSON.stringify(body));
 
-    const res = await fetch(PROVER_URL, {
+    const res = await fetch("https://api.enoki.mystenlabs.com/v1/zklogin/zkp", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${ENOKI_API_KEY}`,
+        "zklogin-jwt": params.jwt,
+      },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -279,9 +278,10 @@ async function fetchZkProof(params: {
       console.error("[zkLogin:prover] error:", err);
       return null;
     }
-    const proof = await res.json();
-    console.log("[zkLogin:prover] response:", JSON.stringify(proof));
-    return proof;
+    const json = await res.json();
+    console.log("[zkLogin:prover] response:", JSON.stringify(json));
+    // Enoki wraps response in { data: { proofPoints, issBase64Details, headerBase64 } }
+    return json.data ?? json;
   } catch (err) {
     console.error("[zkLogin:prover] fetch failed:", err);
     return null;
