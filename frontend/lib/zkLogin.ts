@@ -11,7 +11,7 @@ import { PublicKey } from "@mysten/sui/cryptography";
 import { SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
-export const PROVER_URL = "https://prover-dev.mystenlabs.com/v1";
+export const PROVER_URL = "https://prover.mystenlabs.com/v1";
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 export const MAX_EPOCH_DURATION = 2;
 
