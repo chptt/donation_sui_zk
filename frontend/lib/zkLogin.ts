@@ -261,6 +261,7 @@ async function fetchZkProof(params: {
       ephemeralPublicKey: params.ephemeralPublicKeyB64,
       maxEpoch: params.maxEpoch,
       randomness: params.randomness,
+      network: "testnet",
     };
     console.log("[zkLogin:prover] request body:", JSON.stringify(body));
 
