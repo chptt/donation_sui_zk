@@ -4,10 +4,8 @@ import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-ki
 import { Transaction } from "@mysten/sui/transactions";
 import { getCampaigns, Campaign, PACKAGE_ID, MODULE_NAME } from "@/lib/suiClient";
 import { useZkLogin } from "@/lib/zkLoginContext";
-import { getZkLoginSignature } from "@mysten/sui/zklogin";
-import { computeAddressSeed } from "@/lib/zkLogin";
+import { executeZkLoginTransaction } from "@/lib/zkLogin";
 import { suiClient } from "@/lib/suiClient";
-
 const MIST_PER_SUI = 1_000_000_000;
 
 const charityIcons: { [key: string]: string } = {
@@ -126,37 +124,10 @@ export default function CampaignDetails() {
     setLoading(false);
   };
 
-  /** Execute a transaction using the zkLogin ephemeral key + ZK proof */
+  /** Execute a transaction using the zkLogin ephemeral key + fresh ZK proof */
   const executeWithZkLogin = async (tx: Transaction) => {
     if (!zkSession) throw new Error("No zkLogin session");
-
-    tx.setSender(zkSession.userAddress);
-
-    console.log("[sign] ephemeral pubkey:", zkSession.ephemeralKeyPair.getPublicKey().toBase64());
-    console.log("[sign] maxEpoch:", zkSession.maxEpoch);
-    console.log("[sign] zkProof exists:", !!zkSession.zkProof);
-
-    const { bytes, signature: ephemeralSig } = await tx.sign({
-      client: suiClient,
-      signer: zkSession.ephemeralKeyPair,
-    });
-
-    if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
-
-    const addressSeed = computeAddressSeed(zkSession.salt, zkSession.jwt);
-    console.log("[sign] addressSeed:", addressSeed);
-
-    const zkSignature = getZkLoginSignature({
-      inputs: { ...zkSession.zkProof, addressSeed },
-      maxEpoch: zkSession.maxEpoch,
-      userSignature: ephemeralSig,
-    });
-
-    await suiClient.executeTransactionBlock({
-      transactionBlock: bytes,
-      signature: zkSignature,
-      options: { showEffects: true },
-    });
+    await executeZkLoginTransaction(tx, zkSession, suiClient);
   };
 
   if (pageLoading) {

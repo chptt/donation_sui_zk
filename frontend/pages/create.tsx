@@ -4,8 +4,7 @@ import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-ki
 import { Transaction } from "@mysten/sui/transactions";
 import { PACKAGE_ID, MODULE_NAME, suiClient } from "@/lib/suiClient";
 import { useZkLogin } from "@/lib/zkLoginContext";
-import { computeAddressSeed } from "@/lib/zkLogin";
-import { getZkLoginSignature } from "@mysten/sui/zklogin";
+import { executeZkLoginTransaction } from "@/lib/zkLogin";
 
 const MIST_PER_SUI = 1_000_000_000;
 
@@ -41,23 +40,7 @@ export default function CreateCampaign() {
       });
 
       if (zkSession) {
-        tx.setSender(zkSession.userAddress);
-        const { bytes, signature: ephemeralSig } = await tx.sign({
-          client: suiClient,
-          signer: zkSession.ephemeralKeyPair,
-        });
-        if (!zkSession.zkProof) throw new Error("ZK proof not available. Please sign in again.");
-        const addressSeed = computeAddressSeed(zkSession.salt, zkSession.jwt);
-        const zkSignature = getZkLoginSignature({
-          inputs: { ...zkSession.zkProof, addressSeed },
-          maxEpoch: zkSession.maxEpoch,
-          userSignature: ephemeralSig,
-        });
-        await suiClient.executeTransactionBlock({
-          transactionBlock: bytes,
-          signature: zkSignature,
-          options: { showEffects: true },
-        });
+        await executeZkLoginTransaction(tx, zkSession, suiClient);
       } else {
         await signAndExecute({ transaction: tx });
       }

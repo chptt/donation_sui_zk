@@ -8,6 +8,8 @@ import {
 } from "@mysten/sui/zklogin";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { SuiClient } from "@mysten/sui/client";
+import { getZkLoginSignature } from "@mysten/sui/zklogin";
+import { Transaction } from "@mysten/sui/transactions";
 
 export const PROVER_URL = "https://prover-dev.mystenlabs.com/v1";
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
@@ -24,19 +26,11 @@ export interface ZkLoginSession {
 }
 
 export interface ZkProof {
-  proofPoints: {
-    a: string[];
-    b: string[][];
-    c: string[];
-  };
-  issBase64Details: {
-    value: string;
-    indexMod4: number;
-  };
+  proofPoints: { a: string[]; b: string[][]; c: string[] };
+  issBase64Details: { value: string; indexMod4: number };
   headerBase64: string;
 }
 
-/** Stable salt per Google sub — stored in localStorage */
 function getUserSalt(sub: string): string {
   const key = `zklogin_salt_${sub}`;
   let salt = localStorage.getItem(key);
@@ -47,16 +41,12 @@ function getUserSalt(sub: string): string {
   return salt;
 }
 
-/** Compute the addressSeed needed for getZkLoginSignature */
 export function computeAddressSeed(salt: string, jwt: string): string {
   const decoded = decodeJwt(jwt);
   const aud = Array.isArray(decoded.aud) ? decoded.aud[0] : (decoded.aud as string);
-  const sub = decoded.sub as string;
-  console.log("[zkLogin] computeAddressSeed — sub:", sub, "aud:", aud, "salt:", salt);
-  return genAddressSeed(BigInt(salt), "sub", sub, aud).toString();
+  return genAddressSeed(BigInt(salt), "sub", decoded.sub as string, aud).toString();
 }
 
-/** Redirect to Google OAuth */
 export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   if (!GOOGLE_CLIENT_ID) throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set");
 
@@ -82,7 +72,6 @@ export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-/** Handle OAuth callback — build full session with ZK proof */
 export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   if (typeof window === "undefined") return null;
 
@@ -103,12 +92,7 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   const salt = getUserSalt(sub);
   const ephemeralKeyPair = Ed25519Keypair.fromSecretKey(secretKey);
   const userAddress = jwtToAddress(jwt, salt);
-
-  // Use getExtendedEphemeralPublicKey — required by the prover
   const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
-  console.log("[zkLogin] extendedEphemeralPublicKey:", extendedEphemeralPublicKey);
-  console.log("[zkLogin] pubkey base64:", ephemeralKeyPair.getPublicKey().toBase64());
-  console.log("[zkLogin] salt:", salt, "randomness:", randomness, "maxEpoch:", maxEpoch);
 
   const zkProof = await fetchZkProof({
     jwt,
@@ -128,6 +112,7 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
     zkProof,
   };
 
+  // Store everything needed to re-fetch proof if needed
   sessionStorage.setItem("zklogin_session", JSON.stringify({
     ephemeralSecret: secretKey,
     randomness,
@@ -139,6 +124,55 @@ export async function handleZkLoginCallback(): Promise<ZkLoginSession | null> {
   }));
 
   return session;
+}
+
+/**
+ * Execute a transaction using zkLogin.
+ * Re-fetches the ZK proof fresh each time using the same ephemeral key
+ * to avoid any stale proof / keypair mismatch issues.
+ */
+export async function executeZkLoginTransaction(
+  tx: Transaction,
+  session: ZkLoginSession,
+  suiClient: SuiClient,
+): Promise<void> {
+  tx.setSender(session.userAddress);
+
+  // Always re-fetch proof fresh — guarantees proof matches the keypair being used
+  const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(session.ephemeralKeyPair.getPublicKey());
+
+  const freshProof = await fetchZkProof({
+    jwt: session.jwt,
+    extendedEphemeralPublicKey,
+    maxEpoch: session.maxEpoch,
+    randomness: session.randomness,
+    salt: session.salt,
+  });
+
+  if (!freshProof) throw new Error("Failed to get ZK proof. Please sign in again.");
+
+  const { bytes, signature: ephemeralSig } = await tx.sign({
+    client: suiClient,
+    signer: session.ephemeralKeyPair,
+  });
+
+  const addressSeed = computeAddressSeed(session.salt, session.jwt);
+
+  const zkSignature = getZkLoginSignature({
+    inputs: { ...freshProof, addressSeed },
+    maxEpoch: session.maxEpoch,
+    userSignature: ephemeralSig,
+  });
+
+  const result = await suiClient.executeTransactionBlock({
+    transactionBlock: bytes,
+    signature: zkSignature,
+    options: { showEffects: true },
+  });
+
+  if (result.effects?.status?.status !== "success") {
+    throw new Error(`Transaction failed: ${result.effects?.status?.error}`);
+  }
 }
 
 export function restoreZkLoginSession(): ZkLoginSession | null {
@@ -193,9 +227,7 @@ async function fetchZkProof(params: {
       console.error("Prover error:", await res.text());
       return null;
     }
-    const proof = await res.json();
-    console.log("[zkLogin] proof response:", JSON.stringify(proof));
-    return proof;
+    return await res.json();
   } catch (err) {
     console.error("Failed to fetch ZK proof:", err);
     return null;
