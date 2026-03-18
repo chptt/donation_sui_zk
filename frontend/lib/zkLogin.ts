@@ -3,17 +3,30 @@ import {
   generateRandomness,
   jwtToAddress,
   decodeJwt,
-  getExtendedEphemeralPublicKey,
   genAddressSeed,
   getZkLoginSignature,
 } from "@mysten/sui/zklogin";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { PublicKey } from "@mysten/sui/cryptography";
 import { SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
 export const PROVER_URL = "https://prover-dev.mystenlabs.com/v1";
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 export const MAX_EPOCH_DURATION = 2;
+
+/**
+ * The Mysten prover expects extendedEphemeralPublicKey as the decimal string
+ * of the big-endian integer of publicKey.toSuiBytes() (flag byte + 32 raw bytes).
+ * This is the same value the nonce is computed from internally.
+ * Do NOT use getExtendedEphemeralPublicKey() from the SDK — it returns a base64
+ * string (toSuiPublicKey) which the prover rejects.
+ */
+function computeExtendedEphemeralPublicKey(publicKey: PublicKey): string {
+  const suiBytes = publicKey.toSuiBytes(); // [flag, ...32 raw bytes]
+  const hex = Array.from(suiBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+  return BigInt("0x" + hex).toString();
+}
 
 export interface ZkLoginSession {
   ephemeralKeyPair: Ed25519Keypair;
@@ -59,7 +72,8 @@ export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   const nonce = generateNonce(ephemeralKeyPair.getPublicKey(), maxEpoch, randomness);
 
   // Compute and store extendedEphemeralPublicKey NOW — same instance used for nonce
-  const extendedEphemeralPublicKey = getExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
+  // Must be the decimal string of toSuiBytes() bigint — that's what the prover expects
+  const extendedEphemeralPublicKey = computeExtendedEphemeralPublicKey(ephemeralKeyPair.getPublicKey());
 
   console.log("[zkLogin:init] maxEpoch:", maxEpoch);
   console.log("[zkLogin:init] randomness:", randomness);
