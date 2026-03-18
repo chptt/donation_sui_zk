@@ -13,12 +13,12 @@ export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 export const MAX_EPOCH_DURATION = 2;
 
 /**
- * Enoki ZKP endpoint expects ephemeralPublicKey as raw 32-byte base64
- * (no flag byte prefix — NOT toSuiPublicKey which is 33 bytes with flag).
+ * Enoki nonce endpoint expects ephemeralPublicKey as toSuiBytes() base64
+ * (flag byte + 32 raw bytes = 33 bytes total).
  */
-function toRawBase64(publicKey: PublicKey): string {
-  const raw = publicKey.toRawBytes(); // 32 bytes, no flag
-  return btoa(Array.from(raw).map(b => String.fromCharCode(b)).join(""));
+function toSuiBase64(publicKey: PublicKey): string {
+  const bytes = publicKey.toSuiBytes(); // 33 bytes: flag + raw
+  return btoa(Array.from(bytes).map(b => String.fromCharCode(b)).join(""));
 }
 
 export interface ZkLoginSession {
@@ -49,7 +49,7 @@ export async function initiateZkLogin(suiClient: SuiClient): Promise<void> {
   if (!ENOKI_API_KEY) throw new Error("NEXT_PUBLIC_ENOKI_API_KEY is not set");
 
   const ephemeralKeyPair = new Ed25519Keypair();
-  const ephemeralPublicKeyB64 = toRawBase64(ephemeralKeyPair.getPublicKey());
+  const ephemeralPublicKeyB64 = toSuiBase64(ephemeralKeyPair.getPublicKey());
 
   // Get nonce + randomness + maxEpoch from Enoki
   const nonceRes = await fetch("https://api.enoki.mystenlabs.com/v1/zklogin/nonce", {
