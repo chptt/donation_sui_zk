@@ -47,9 +47,16 @@ export default function CreateCampaign() {
 
       alert("Campaign created successfully!");
       router.push("/");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating campaign:", error);
-      alert("Failed to create campaign. Please try again.");
+      const msg = error?.message || String(error);
+      if (msg.includes("InsufficientCoinBalance") || msg.includes("insufficient") || msg.includes("gas")) {
+        alert("Insufficient SUI balance. Please fund your wallet from the testnet faucet at https://faucet.sui.io");
+      } else if (msg.includes("expired") || msg.includes("Groth16") || msg.includes("zkLogin")) {
+        alert("Your login session has expired. Please sign out and sign in with Google again.");
+      } else {
+        alert("Failed to create campaign: " + msg);
+      }
     }
     setLoading(false);
   };

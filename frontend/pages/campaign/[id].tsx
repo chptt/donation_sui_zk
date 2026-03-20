@@ -63,7 +63,6 @@ export default function CampaignDetails() {
       alert("Please connect your wallet or sign in with Google first");
       return;
     }
-    // Block self-donation
     if (activeAddress === campaign?.creator) {
       alert("Campaign creators cannot donate to their own campaigns.");
       return;
@@ -80,7 +79,6 @@ export default function CampaignDetails() {
       });
 
       if (zkSession) {
-        // Execute with zkLogin signature
         await executeWithZkLogin(tx);
       } else {
         await signAndExecute({ transaction: tx });
@@ -89,9 +87,16 @@ export default function CampaignDetails() {
       alert("Donation successful! Thank you for your support!");
       setDonationAmount("");
       loadCampaign();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error donating:", error);
-      alert("Failed to donate. Please try again.");
+      const msg = error?.message || String(error);
+      if (msg.includes("InsufficientCoinBalance") || msg.includes("insufficient") || msg.includes("gas")) {
+        alert("Insufficient SUI balance. Please fund your wallet from the testnet faucet at https://faucet.sui.io");
+      } else if (msg.includes("expired") || msg.includes("Groth16") || msg.includes("zkLogin")) {
+        alert("Your login session has expired. Please sign out and sign in with Google again.");
+      } else {
+        alert("Donation failed: " + msg);
+      }
     }
     setLoading(false);
   };
@@ -117,9 +122,16 @@ export default function CampaignDetails() {
 
       alert("Funds withdrawn successfully!");
       loadCampaign();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error withdrawing:", error);
-      alert("Failed to withdraw. Please try again.");
+      const msg = error?.message || String(error);
+      if (msg.includes("InsufficientCoinBalance") || msg.includes("insufficient") || msg.includes("gas")) {
+        alert("Insufficient SUI balance to cover gas fees. Please fund your wallet.");
+      } else if (msg.includes("expired") || msg.includes("Groth16") || msg.includes("zkLogin")) {
+        alert("Your login session has expired. Please sign out and sign in with Google again.");
+      } else {
+        alert("Withdrawal failed: " + msg);
+      }
     }
     setLoading(false);
   };
